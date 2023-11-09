@@ -2,7 +2,7 @@
 
 echo "Start sending"
 
-for (( i=0; i<1000; i++ ))
+for (( i=0; i<10000; i++ ))
 do
 curl --header "Content-Type: application/json" \
     --request POST \
