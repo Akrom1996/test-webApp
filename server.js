@@ -1,58 +1,58 @@
 const express = require("express")
-const user = require("./models/user")
+const cpus = require("os").cpus
+
 var bodyParser = require('body-parser')
-
-const app = express()
-
-app.use(bodyParser.urlencoded({
-    extended: false
-}))
-
-app.use(bodyParser.json())
-
+const cluster = require("cluster")
 const db = require("./models")
+const cron = require('node-cron');
 const {
-    User
-} = require("./models");
+    Worker
+} = require("worker_threads");
 
-app.get('/', async (req, res) => {
-    const data = await User.findAll()
-    return res.status(200).json({
-        data
+if (cluster.isMaster) {
+    db.sequelize.sync().then((req) => {
+        console.log("Sequelize synced")
     })
-})
-
-app.post('/user/withdraw/:userId', async (req, res) => {
-    console.log(req.params, req.body)
-    if (!req.params || !req.body.amount) {
-        return res.status(400).json({
-            error: 'Required variables are not given'
-        })
+    for (let i = 0; i < cpus().length; i++) {
+        cluster.fork()
     }
-    try {
-        const user = await User.findByPk(req.params.userId)
-        if (!user)
-            return res.status(400).json({
-                error: 'User not found'
-            })
-        if (user.balance >= req.body.amount) {
-            user.balance -= req.body.amount
-            await user.save()
-        } else {
-            return res.status(400).json({
-                error: 'You do not have enough money to withdraw'
-            })
-        }
+    cluster.on('exit', (worker, code, signal) => {
+        console.log(`worker ${worker.process.pid} died`);
+        cluster.fork()
+    });
+} else if (cluster.isWorker) {
+    const app = express()
+
+    app.use(bodyParser.urlencoded({
+        extended: false
+    }))
+
+    app.use(bodyParser.json())
+    const server = require('http').createServer(app)
+
+    cron.schedule('10 * * * * *', () => {
+        console.log('running a task every minute');
+        const worker = new Worker("./worker1.js", {
+            workerData: 60000 * 2,
+        });
+        worker.on("message", (data) => {
+            console.log(`result from worker is: ${data}`);
+        });
+        worker.on("error", (msg) => {
+            console.log(`An error from worker is: ${JSON.stringify(msg)}`);
+        });
+    }).start()
+
+    const {
+        User
+    } = require("./models");
+
+    app.get('/', async (req, res) => {
+        const data = await User.findAll()
         return res.status(200).json({
-            data: user
+            data
         })
-    } catch (error) {
-        return res.status(500).json({
-            error: error.message
-        })
-    }
-})
+    })
 
-db.sequelize.sync().then((req) => {
-    app.listen('3001', () => console.log('Server is running on port 3001'))
-})
+    server.listen('3001', () => console.log("Listening on port: %s, processId: %s", server.address().port, process.pid))
+}
