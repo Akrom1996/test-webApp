@@ -24,4 +24,7 @@ $ npm run start
 {
     "amount": 2
 }
+
+# Or run 
+$ sh test.sh
 ```
